@@ -15,8 +15,7 @@ You will need the following components:
 
 ## Development
 
-The asciidoctor source files need to be placed in the subdirectory
-`src/asciidoctor`. They need to have the file extension `.adoc`. You can 
-edit them with your preferred editor and generate the HTML files via 
-`sbt make-site`.
+The asciidoctor source files need to be placed in the subdirectory `doc`. 
+They need to have the file extension `.adoc`. You can edit them with your 
+preferred editor and generate the HTML files via `sbt make-site`.
 

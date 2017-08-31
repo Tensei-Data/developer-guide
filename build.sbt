@@ -6,7 +6,8 @@ lazy val tenseiDeveloperGuide = project.in(file("."))
     name := "tensei-developer-guide",
     git.useGitDescribe := true,
     ghpagesNoJekyll := true,
-    git.remoteRepo := "git@github.com:Tensei-Data/developer-guide.git"
+    git.remoteRepo := "git@github.com:Tensei-Data/developer-guide.git",
+    sourceDirectory in Asciidoctor := baseDirectory.value / "doc"
   )
   .enablePlugins(
     AsciidoctorPlugin,
