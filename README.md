@@ -3,6 +3,9 @@
 This repository holds several documentations for Tensei-Data which are 
 intended for developers and administrators.
 
+The documentation is published available online at: 
+https://tensei-data.github.io/developer-guide/
+
 ## Requirements
 
 The documentations are written using [Asciidoctor](http://asciidoctor.org/)
