@@ -1,11 +1,12 @@
 = Tensei-Data Developer Guide
 Contributors as noted in the AUTHORS.md file.
-:doctype: book
+:doctype: article
 :toc: left
 :toclevels: 4
 :numbered:
 :icons: font
 :source-highlighter: coderay
+:pdf-page-size: A4
 :Revision: {project-version}
 
 [[preamble]]
@@ -16,15 +17,18 @@ that strive for a better understanding of the system internals.
 
 Version:: {project-version}
 
+NOTE: For this guide it is assumed that you run the components of the
+Tensei-Data system directly from their source repositories.
+
+[[copyright]]
+=== Copyright ===
+
 [source,plain]
 ----
-Copyright (c) 2014 - 2017 Contributors as noted in the AUTHORS.md file
-
-The Tensei-Data developer guide is distributed under the terms of the 
-Creative Commons Attribution-ShareAlike 4.0 International license 
-(CC BY-SA 4.0).
+include::../NOTICE[]
 ----
 
+[[authors]]
 === Authors ===
 The following authors contributed to this guide:
 
@@ -32,4 +36,27 @@ The following authors contributed to this guide:
 ----
 include::../AUTHORS.md[]
 ----
+
+[[intro]]
+== Introduction ==
+To develop with the Tensei-Data system you will need knowledge in Scala
+footnoteref:[Scala, Scala Programming Language: http://scala-lang.org],
+preferably Akka footnoteref:[Akka, Akka Toolkit: http://akka.io] and
+maybe the Play Framework footnoteref:[Play, Play Framework:
+https://playframework.com/] and Javascript/Coffeescript
+footnoteref:[Coffeescript, Coffeescript: http://coffeescript.org].
+
+[[run-from-source]]
+=== Running from source ===
+Running the components directly from source is simple: Just checkout the
+following repositories (better your fork of them):
+
+* tensei-agent
+* tensei-frontend
+* tensei-server
+
+Within each repository compile the sources using the appropriate sbt
+task (`compile`). To start a component just use the `run` task.
+
+WARNING: You should always start the Tensei-Server first!
 
