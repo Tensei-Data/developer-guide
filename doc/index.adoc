@@ -60,3 +60,275 @@ task (`compile`). To start a component just use the `run` task.
 
 WARNING: You should always start the Tensei-Server first!
 
+[[extending]]
+== Extending Tensei-Data ==
+
+[[add-transformer]]
+=== Adding a transformer ===
+A transformer is defined as an actor that extends the `BaseTransformer`
+class which can be found under `com.wegtam.tensei.agent.transformers`.
+
+Besides the general transformers there are _atomic_ transformers. An atomic
+transformer performs its action before the general transformers are run.
+
+TIP: There is no difference regarding the implementation between atomic and
+regular transformers.
+
+[[add-transformer-implement]]
+==== Implementing your transformer ====
+Start by creating a class which extends the aforementioned `BaseTransformer`
+and implement the method `transform`. The general workflow is as follows:
+
+. A transformer is created and initialised using the message
+`PrepareForTransformation` on which it switches context using
+`context.become(transform)` and returns the message `ReadyToTransform`. This
+is already implemented by the base transformer.
+. The ready transformer receives a message `StartTransformation` which
+contains the data to transform and the options.
+. After successful operation the transformer responds with a
+`TransformerResponse` message and switches the context back by
+`context.become(receive)`.
+
+TIP: To ease testing it is advised to implement the core transformation
+functions either in the companion object or in a trait.
+
+[[add-transformer-implement-props]]
+===== Akka props =====
+Within the companion object you have to define the method `props` which
+returns the properties needed by Akka to create the actor. Since a
+transformer should not use constructor parameters this is as trivial as
+this:
+
+.Define actor props for Akka
+[source,scala]
+----
+import akka.actor.Props
+
+object MyTransformerName {
+  def props: Props = Props(new MyTransformerName())
+}
+----
+
+[[add-transformer-implement-actor]]
+===== Actor implementation =====
+In general you only have to implement the remaining workflow steps within
+the actors `transform` method. For extracting settings from the given
+options you can use some functions defined in the base transformer like
+`paramValueO`, `paramValue` or `isCorrectParameter`.
+
+.Example transformer
+[source,scala]
+----
+import akka.actor.Props
+import com.wegtam.tensei.agent.transformers.BaseTransformer.{
+  StartTransformation,
+  TransformerResponse
+}
+
+class MyTransformerName extends BaseTransformer {
+  @SuppressWarnings(Array("org.wartremover.warts.Any"))
+  override def transform: Receive = {
+    case StartTransformation(src, options) =>
+      log.debug("Starting MyTransformerName transformation.")
+      val settingOne: Int = paramValueO("settingOneName")(options.params)
+        .map(_.toInt).getOrElse(0) // <1>
+      val settingTwo: String = paramValue("settingTwoName")(options.params)
+
+      val result = src.map {
+        case t: MyDataType => MyTransformerName.myConvert(t)
+	case otherDataType => otherDataType
+      }
+
+      context.become(receive)
+      sender() ! TransformerResponse(result, classOf[String])
+  }
+}
+
+object MyTransformerName {
+  def props: Props = Props(new MyTransformerName())
+
+  def myConvert(t: MyDataType): AnotherDataType = ???
+}
+----
+<1> This line will crash the actor if `.toInt` throws an exception.
+
+NOTE: If your transformer is unable to handle certain usecases which result
+from operating it on irrational input let it crash.
+
+[[add-transformer-implement-testing]]
+===== Testing your transformer =====
+Write tests for your transformer which include possible edge or special
+cases as well as general behaviour. Regarding the general behaviour the
+following is expected:
+
+. When given no data the actor should return an empty list.
+. When given one value the actor should return a list with one result.
+. When given multiple values the actor should return list with the results.
+. When given invalid options it should either use sensible defaults or
+crash.
+
+Additionally test your conversion functions for the mentioned edge/special
+cases.
+
+TIP: Use the `PropertyChecks` trait from
+link:http://www.scalatest.org/[ScalaTest] to be able to leverage
+link:http://www.scalacheck.org[ScalaCheck] for massive input data
+generation and property based tests.
+
+[[add-transformer-frontend]]
+==== Adding your transformer to the frontend ====
+Without adding your transformer to the editor (frontend) it will be
+invisible and thus unuseable for the user.
+
+Adding a new transformer to the editor is straightforward you only need to
+provide serveral informations:
+
+. localisation messages for your settings
+. description of the transformer settings and class
+. a template for the settings form
+
+[[add-transformer-frontend-localisation]]
+===== Localisation =====
+The localisation messages are kept in the file `conf/messages` and provide a
+simple key value mapping. By convention localisation keys for transformer
+settings follow this pattern:
+`ui.mappings.transformer.transformerName.settingsName`.
+
+[[add-transformer-frontend-settings]]
+===== Settings =====
+The file `editor-controllers.coffee` under `app/assets/javascripts` contains
+the relevant code.
+
+At first you should add your transformer to the field
+`selectedTransformerIs` which is used to initialise the form. It contains a
+list of transformer names which are mapped to `false`.
+
+[source,coffeescript]
+----
+  ...
+  selectedTransformerIs: (->
+    ts = {
+      CastStringToLong: false,
+      Concat: false,
+      ...
+      MyTransformerName: false
+    }
+    ...
+  ...
+----
+
+Next the field `availableTransformerOptions` contains objects that describe
+the available settings for each transformer. You can use the attribute
+`options` to provide a fixed list of values for a dropdown field. The
+attribute `value` can be used to define the default value. Setting `value`
+to `null` results in no predefined default.
+
+Defining an empty object means that the transformer has no settings.
+
+[source,coffeescript]
+----
+  ...
+  availableTransformerOptions:{
+    AnExampleTransformerWithoutSettings: {},
+    MyTransformerName: {
+      settingNameOne: {
+        options: null,
+	value: "Some text"
+      },
+      settingNameTwo: {
+        options: null,
+	value: ""
+      },
+      settingNameThree: {
+        options: ["A", "B", "C"],
+	value: null
+      }
+    },
+    ...
+  }
+  ...
+----
+
+Last but not least you have to add your transformer to the two fields
+`availableTransformations` and `availableTransformationsClassNames`. The
+former holds a list of transformer names that are displayed in the form
+dropdown when adding a transformer. The latter is used to map the
+transformer name to the class name which is needed by the agent to
+initialise the transformer properly.
+
+[source,coffeescript]
+----
+  ...
+  availableTransformations: [
+    "",
+    "Concat",
+    "DateConverter",
+    ...
+    "MyTransformerName"
+  ],
+  availableTransformationsClassNames: {
+    "CastStringToLong": "com.wegtam.tensei.agent.transformers.CastStringToLong",
+    ...
+    "MyTransformerName": "com.wegtam.tensei.agent.transformers.MyTransformerName"
+  },
+  ...
+----
+
+[[add-transformer-frontend-settings-template]]
+===== Settings Template =====
+The form template for your transformer settings has to be defined in
+`editor.scala.html` which resides under `app/views/cookbookresources`.
+
+Depending on the type of your transformer you have to add it to the `div`
+with the id `transformations` and (only for atomic transformers!) to the
+`div` with the id `atomictransformations`.
+
+At the mentioned places you will find an `if` construct which has to be
+extended to render your template partial there.
+
+[source,html]
+----
+  ...
+  {{else if selectedTransformerIs.TimestampCalibrate}}
+    {{partial 'transformer-settings-timestamp-calibrate'}}
+  {{else if selectedTransformerIs.MyTransformerName}}
+    {{partial 'transformer-settings-my-transformer-name'}}
+  {{else}}                                                                     
+    <p class="alert alert-danger">
+      @Messages("ui.editor.transformer.missingSettingsForm")
+    </p>
+  {{/if}}
+
+  ...
+----
+
+At the bottom of the file you'll find handlebars templates for each
+transformers settings. Just create your own one by learning from the
+existing ones.
+
+.Example settings template
+[source,html]
+----
+<script type="text/x-handlebars" 
+  data-template-name="_transformer-settings-my-transformer-name">
+    <table class="table table-condensed">
+      <tbody>
+        <tr>
+          <td>@Messages("ui.mappings.transformer.myTransformerName.settingOne")</td>
+          <td>{{view "select" class="form-control input-sm"
+	    content=selectedTransformerOptions.settingOne.options
+	    selection=selectedTransformerOptions.settingOne.value}}</td>
+        </tr>
+        <tr>
+          <td>@Messages("ui.mappings.transformer.myTransformerName.settingTwo")</td>
+	  <td>{{input class="form-control input-sm" 
+	    value=selectedTransformerOptions.settingTwo.value}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </script>
+----
+
+Congratulations, your transformer should now be visible and useable from the
+frontend cookbook editor.
+
