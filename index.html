@@ -530,6 +530,28 @@ table.CodeRay td.code>pre{padding:0}
 <li><a href="#run-from-source">2.1. Running from source</a></li>
 </ul>
 </li>
+<li><a href="#extending">3. Extending Tensei-Data</a>
+<ul class="sectlevel2">
+<li><a href="#add-transformer">3.1. Adding a transformer</a>
+<ul class="sectlevel3">
+<li><a href="#add-transformer-implement">3.1.1. Implementing your transformer</a>
+<ul class="sectlevel4">
+<li><a href="#add-transformer-implement-props">Akka props</a></li>
+<li><a href="#add-transformer-implement-actor">Actor implementation</a></li>
+<li><a href="#add-transformer-implement-testing">Testing your transformer</a></li>
+</ul>
+</li>
+<li><a href="#add-transformer-frontend">3.1.2. Adding your transformer to the frontend</a>
+<ul class="sectlevel4">
+<li><a href="#add-transformer-frontend-localisation">Localisation</a></li>
+<li><a href="#add-transformer-frontend-settings">Settings</a></li>
+<li><a href="#add-transformer-frontend-settings-template">Settings Template</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -546,7 +568,7 @@ that strive for a better understanding of the system internals.</p>
 <dl>
 <dt class="hdlist1">Version</dt>
 <dd>
-<p>65371ad997a4e506f153293eebc10cea7fffd3d2-SNAPSHOT</p>
+<p>ab0f8882f475c8806b920aa3541368255240f9b9</p>
 </dd>
 </dl>
 </div>
@@ -646,6 +668,385 @@ You should always start the Tensei-Server first!
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="extending">3. Extending Tensei-Data</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="add-transformer">3.1. Adding a transformer</h3>
+<div class="paragraph">
+<p>A transformer is defined as an actor that extends the <code>BaseTransformer</code>
+class which can be found under <code>com.wegtam.tensei.agent.transformers</code>.</p>
+</div>
+<div class="paragraph">
+<p>Besides the general transformers there are <em>atomic</em> transformers. An atomic
+transformer performs its action before the general transformers are run.</p>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+There is no difference regarding the implementation between atomic and
+regular transformers.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect3">
+<h4 id="add-transformer-implement">3.1.1. Implementing your transformer</h4>
+<div class="paragraph">
+<p>Start by creating a class which extends the aforementioned <code>BaseTransformer</code>
+and implement the method <code>transform</code>. The general workflow is as follows:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>A transformer is created and initialised using the message
+<code>PrepareForTransformation</code> on which it switches context using
+<code>context.become(transform)</code> and returns the message <code>ReadyToTransform</code>. This
+is already implemented by the base transformer.</p>
+</li>
+<li>
+<p>The ready transformer receives a message <code>StartTransformation</code> which
+contains the data to transform and the options.</p>
+</li>
+<li>
+<p>After successful operation the transformer responds with a
+<code>TransformerResponse</code> message and switches the context back by
+<code>context.become(receive)</code>.</p>
+</li>
+</ol>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+To ease testing it is advised to implement the core transformation
+functions either in the companion object or in a trait.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect4">
+<h5 id="add-transformer-implement-props">Akka props</h5>
+<div class="paragraph">
+<p>Within the companion object you have to define the method <code>props</code> which
+returns the properties needed by Akka to create the actor. Since a
+transformer should not use constructor parameters this is as trivial as
+this:</p>
+</div>
+<div class="listingblock">
+<div class="title">Define actor props for Akka</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="scala">import akka.actor.Props
+
+object MyTransformerName {
+  def props: Props = Props(new MyTransformerName())
+}</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="add-transformer-implement-actor">Actor implementation</h5>
+<div class="paragraph">
+<p>In general you only have to implement the remaining workflow steps within
+the actors <code>transform</code> method. For extracting settings from the given
+options you can use some functions defined in the base transformer like
+<code>paramValueO</code>, <code>paramValue</code> or <code>isCorrectParameter</code>.</p>
+</div>
+<div class="listingblock">
+<div class="title">Example transformer</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="scala">import akka.actor.Props
+import com.wegtam.tensei.agent.transformers.BaseTransformer.{
+  StartTransformation,
+  TransformerResponse
+}
+
+class MyTransformerName extends BaseTransformer {
+  @SuppressWarnings(Array(&quot;org.wartremover.warts.Any&quot;))
+  override def transform: Receive = {
+    case StartTransformation(src, options) =&gt;
+      log.debug(&quot;Starting MyTransformerName transformation.&quot;)
+      val settingOne: Int = paramValueO(&quot;settingOneName&quot;)(options.params)
+        .map(_.toInt).getOrElse(0) <i class="conum" data-value="1"></i><b>(1)</b>
+      val settingTwo: String = paramValue(&quot;settingTwoName&quot;)(options.params)
+
+      val result = src.map {
+        case t: MyDataType =&gt; MyTransformerName.myConvert(t)
+        case otherDataType =&gt; otherDataType
+      }
+
+      context.become(receive)
+      sender() ! TransformerResponse(result, classOf[String])
+  }
+}
+
+object MyTransformerName {
+  def props: Props = Props(new MyTransformerName())
+
+  def myConvert(t: MyDataType): AnotherDataType = ???
+}</code></pre>
+</div>
+</div>
+<div class="colist arabic">
+<table>
+<tr>
+<td><i class="conum" data-value="1"></i><b>1</b></td>
+<td>This line will crash the actor if <code>.toInt</code> throws an exception.</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+If your transformer is unable to handle certain usecases which result
+from operating it on irrational input let it crash.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect4">
+<h5 id="add-transformer-implement-testing">Testing your transformer</h5>
+<div class="paragraph">
+<p>Write tests for your transformer which include possible edge or special
+cases as well as general behaviour. Regarding the general behaviour the
+following is expected:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>When given no data the actor should return an empty list.</p>
+</li>
+<li>
+<p>When given one value the actor should return a list with one result.</p>
+</li>
+<li>
+<p>When given multiple values the actor should return list with the results.</p>
+</li>
+<li>
+<p>When given invalid options it should either use sensible defaults or
+crash.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>Additionally test your conversion functions for the mentioned edge/special
+cases.</p>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+Use the <code>PropertyChecks</code> trait from
+<a href="http://www.scalatest.org/">ScalaTest</a> to be able to leverage
+<a href="http://www.scalacheck.org">ScalaCheck</a> for massive input data
+generation and property based tests.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="add-transformer-frontend">3.1.2. Adding your transformer to the frontend</h4>
+<div class="paragraph">
+<p>Without adding your transformer to the editor (frontend) it will be
+invisible and thus unuseable for the user.</p>
+</div>
+<div class="paragraph">
+<p>Adding a new transformer to the editor is straightforward you only need to
+provide serveral informations:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>localisation messages for your settings</p>
+</li>
+<li>
+<p>description of the transformer settings and class</p>
+</li>
+<li>
+<p>a template for the settings form</p>
+</li>
+</ol>
+</div>
+<div class="sect4">
+<h5 id="add-transformer-frontend-localisation">Localisation</h5>
+<div class="paragraph">
+<p>The localisation messages are kept in the file <code>conf/messages</code> and provide a
+simple key value mapping. By convention localisation keys for transformer
+settings follow this pattern:
+<code>ui.mappings.transformer.transformerName.settingsName</code>.</p>
+</div>
+</div>
+<div class="sect4">
+<h5 id="add-transformer-frontend-settings">Settings</h5>
+<div class="paragraph">
+<p>The file <code>editor-controllers.coffee</code> under <code>app/assets/javascripts</code> contains
+the relevant code.</p>
+</div>
+<div class="paragraph">
+<p>At first you should add your transformer to the field
+<code>selectedTransformerIs</code> which is used to initialise the form. It contains a
+list of transformer names which are mapped to <code>false</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="coffeescript">  ...
+  selectedTransformerIs: (-&gt;
+    ts = {
+      CastStringToLong: false,
+      Concat: false,
+      ...
+      MyTransformerName: false
+    }
+    ...
+  ...</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Next the field <code>availableTransformerOptions</code> contains objects that describe
+the available settings for each transformer. You can use the attribute
+<code>options</code> to provide a fixed list of values for a dropdown field. The
+attribute <code>value</code> can be used to define the default value. Setting <code>value</code>
+to <code>null</code> results in no predefined default.</p>
+</div>
+<div class="paragraph">
+<p>Defining an empty object means that the transformer has no settings.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="coffeescript">  ...
+  availableTransformerOptions:{
+    AnExampleTransformerWithoutSettings: {},
+    MyTransformerName: {
+      settingNameOne: {
+        options: null,
+        value: &quot;Some text&quot;
+      },
+      settingNameTwo: {
+        options: null,
+        value: &quot;&quot;
+      },
+      settingNameThree: {
+        options: [&quot;A&quot;, &quot;B&quot;, &quot;C&quot;],
+        value: null
+      }
+    },
+    ...
+  }
+  ...</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Last but not least you have to add your transformer to the two fields
+<code>availableTransformations</code> and <code>availableTransformationsClassNames</code>. The
+former holds a list of transformer names that are displayed in the form
+dropdown when adding a transformer. The latter is used to map the
+transformer name to the class name which is needed by the agent to
+initialise the transformer properly.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="coffeescript">  ...
+  availableTransformations: [
+    &quot;&quot;,
+    &quot;Concat&quot;,
+    &quot;DateConverter&quot;,
+    ...
+    &quot;MyTransformerName&quot;
+  ],
+  availableTransformationsClassNames: {
+    &quot;CastStringToLong&quot;: &quot;com.wegtam.tensei.agent.transformers.CastStringToLong&quot;,
+    ...
+    &quot;MyTransformerName&quot;: &quot;com.wegtam.tensei.agent.transformers.MyTransformerName&quot;
+  },
+  ...</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="add-transformer-frontend-settings-template">Settings Template</h5>
+<div class="paragraph">
+<p>The form template for your transformer settings has to be defined in
+<code>editor.scala.html</code> which resides under <code>app/views/cookbookresources</code>.</p>
+</div>
+<div class="paragraph">
+<p>Depending on the type of your transformer you have to add it to the <code>div</code>
+with the id <code>transformations</code> and (only for atomic transformers!) to the
+<code>div</code> with the id <code>atomictransformations</code>.</p>
+</div>
+<div class="paragraph">
+<p>At the mentioned places you will find an <code>if</code> construct which has to be
+extended to render your template partial there.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="html">  ...
+  {{else if selectedTransformerIs.TimestampCalibrate}}
+    {{partial 'transformer-settings-timestamp-calibrate'}}
+  {{else if selectedTransformerIs.MyTransformerName}}
+    {{partial 'transformer-settings-my-transformer-name'}}
+  {{else}}
+    <span class="tag">&lt;p</span> <span class="attribute-name">class</span>=<span class="string"><span class="delimiter">&quot;</span><span class="content">alert alert-danger</span><span class="delimiter">&quot;</span></span><span class="tag">&gt;</span>
+      @Messages(&quot;ui.editor.transformer.missingSettingsForm&quot;)
+    <span class="tag">&lt;/p&gt;</span>
+  {{/if}}
+
+  ...</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>At the bottom of the file you&#8217;ll find handlebars templates for each
+transformers settings. Just create your own one by learning from the
+existing ones.</p>
+</div>
+<div class="listingblock">
+<div class="title">Example settings template</div>
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="html"><span class="tag">&lt;script</span> <span class="attribute-name">type</span>=<span class="string"><span class="delimiter">&quot;</span><span class="content">text/x-handlebars</span><span class="delimiter">&quot;</span></span>
+  <span class="attribute-name">data-template-name</span>=<span class="string"><span class="delimiter">&quot;</span><span class="content">_transformer-settings-my-transformer-name</span><span class="delimiter">&quot;</span></span><span class="tag">&gt;</span>
+<span class="inline">    <span class="tag">&lt;table</span> <span class="attribute-name">class</span>=<span class="string"><span class="delimiter">&quot;</span><span class="content">table table-condensed</span><span class="delimiter">&quot;</span></span><span class="tag">&gt;</span>
+      <span class="tag">&lt;tbody&gt;</span>
+        <span class="tag">&lt;tr&gt;</span>
+          <span class="tag">&lt;td&gt;</span>@Messages(&quot;ui.mappings.transformer.myTransformerName.settingOne&quot;)<span class="tag">&lt;/td&gt;</span>
+          <span class="tag">&lt;td&gt;</span>{{view &quot;select&quot; class=&quot;form-control input-sm&quot;
+            content=selectedTransformerOptions.settingOne.options
+            selection=selectedTransformerOptions.settingOne.value}}<span class="tag">&lt;/td&gt;</span>
+        <span class="tag">&lt;/tr&gt;</span>
+        <span class="tag">&lt;tr&gt;</span>
+          <span class="tag">&lt;td&gt;</span>@Messages(&quot;ui.mappings.transformer.myTransformerName.settingTwo&quot;)<span class="tag">&lt;/td&gt;</span>
+          <span class="tag">&lt;td&gt;</span>{{input class=&quot;form-control input-sm&quot;
+            value=selectedTransformerOptions.settingTwo.value}}<span class="tag">&lt;/td&gt;</span>
+        <span class="tag">&lt;/tr&gt;</span>
+      <span class="tag">&lt;/tbody&gt;</span>
+    <span class="tag">&lt;/table&gt;</span></span>
+  <span class="tag">&lt;/script&gt;</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Congratulations, your transformer should now be visible and useable from the
+frontend cookbook editor.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
 </div>
 <div id="footnotes">
 <hr>
@@ -664,7 +1065,7 @@ You should always start the Tensei-Server first!
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2017-09-08 12:42:10 +02:00
+Last updated 2017-09-15 16:24:41 +02:00
 </div>
 </div>
 </body>
